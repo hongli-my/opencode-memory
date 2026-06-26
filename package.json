@@ -1,0 +1,33 @@
+{
+  "name": "opencode-memory",
+  "version": "0.1.0",
+  "description": "Local persistent memory for opencode — dual-layer (core snapshot + semantic recall), zero service, zero login",
+  "type": "module",
+  "main": "dist/index.js",
+  "opencode": {
+    "type": "plugin",
+    "hooks": [
+      "event",
+      "tool",
+      "tool.execute.after",
+      "experimental.chat.system.transform",
+      "experimental.chat.messages.transform",
+      "experimental.session.compacting",
+      "dispose"
+    ]
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "latest",
+    "@opencode-ai/sdk": "latest",
+    "@huggingface/transformers": "^4.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/bun": "latest"
+  },
+  "license": "MIT"
+}
