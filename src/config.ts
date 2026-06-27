@@ -56,7 +56,42 @@ export function loadConfig(configPath: string): Config {
 }
 
 function stripJsonc(text: string): string {
-  return text.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")
+  let out = ""
+  let i = 0
+  const n = text.length
+  while (i < n) {
+    const ch = text[i]
+    if (ch === '"') {
+      out += ch
+      i++
+      while (i < n) {
+        const c = text[i]
+        out += c
+        if (c === "\\" && i + 1 < n) {
+          out += text[i + 1]
+          i += 2
+          continue
+        }
+        i++
+        if (c === '"') break
+      }
+      continue
+    }
+    if (ch === "/" && text[i + 1] === "/") {
+      i += 2
+      while (i < n && text[i] !== "\n") i++
+      continue
+    }
+    if (ch === "/" && text[i + 1] === "*") {
+      i += 2
+      while (i < n && !(text[i] === "*" && text[i + 1] === "/")) i++
+      i += 2
+      continue
+    }
+    out += ch
+    i++
+  }
+  return out
 }
 
 function deepMerge<T>(base: T, override: Record<string, unknown>): T {

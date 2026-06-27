@@ -36,6 +36,19 @@ export function createMemoryTools(store: MemoryStore, config: Config) {
         const scope = scopeFor(context, args.scope)
         const core = args.core ?? false
 
+        if (core) {
+          const limit = args.type === "preference" ? config.layer1.userCharLimit : config.layer1.memoryCharLimit
+          const used = store.coreCharCount(scope, args.type)
+          if (used + args.content.length > limit) {
+            const blocks = getL1Blocks(store, scope, config)
+            const current = blocks.find((b) => b.type === args.type)
+            return {
+              title: "Memory Char Limit Exceeded",
+              output: `${args.type} memory at ${used}/${limit} chars. Adding this entry (${args.content.length} chars) would exceed the limit.\nConsolidate now: use memory_replace to merge overlapping entries into shorter ones or memory_forget to remove stale entries, then retry this add — all in this turn.\n\nCurrent ${args.type} entries:\n${current?.content ?? "(empty)"}`,
+            }
+          }
+        }
+
         const emb = await embed(args.content)
         const similar = store.findSimilar({ embedding: emb, scope, threshold: config.dedupThreshold })
         if (similar.length > 0) {
@@ -53,19 +66,6 @@ export function createMemoryTools(store: MemoryStore, config: Config) {
           return {
             title: "Memory Saved (deduped)",
             output: `Saved as ${core ? "core (L1)" : "long-tail (L2)"} memory.\n${similar.length} similar older memor${similar.length === 1 ? "y" : "ies"} superseded.\n\nContent: ${args.content}`,
-          }
-        }
-
-        if (core) {
-          const limit = args.type === "preference" ? config.layer1.userCharLimit : config.layer1.memoryCharLimit
-          const used = store.coreCharCount(scope, args.type)
-          if (used + args.content.length > limit) {
-            const blocks = getL1Blocks(store, scope, config)
-            const current = blocks.find((b) => b.type === args.type)
-            return {
-              title: "Memory Char Limit Exceeded",
-              output: `${args.type} memory at ${used}/${limit} chars. Adding this entry (${args.content.length} chars) would exceed the limit.\nConsolidate now: use memory_replace to merge overlapping entries into shorter ones or memory_forget to remove stale entries, then retry this add — all in this turn.\n\nCurrent ${args.type} entries:\n${current?.content ?? "(empty)"}`,
-            }
           }
         }
 
@@ -97,10 +97,11 @@ export function createMemoryTools(store: MemoryStore, config: Config) {
       async execute(args: { query: string; scope?: "user" | "project"; limit?: number; type?: MemoryType }, context: ToolContext) {
         const scope = scopeFor(context, args.scope)
         const queryEmb = await embed(args.query)
+        const limit = Math.max(1, Math.min(args.limit ?? config.layer2.maxResults, 50))
         const results = store.search({
           queryEmbedding: queryEmb,
           scope,
-          limit: args.limit ?? config.layer2.maxResults,
+          limit,
           threshold: config.layer2.similarityThreshold,
           type: args.type,
         })
@@ -123,7 +124,8 @@ export function createMemoryTools(store: MemoryStore, config: Config) {
       },
       async execute(args: { old_text: string; new_text: string; type: MemoryType; scope?: "user" | "project" }, context: ToolContext) {
         const scope = scopeFor(context, args.scope)
-        const changes = store.replaceContent(scope, args.old_text, args.new_text, args.type)
+        const newEmb = await embed(args.new_text)
+        const changes = store.replaceContent(scope, args.old_text, args.new_text, args.type, newEmb)
         if (changes === 0) {
           return { title: "Memory Replace", output: `No memory found matching: "${args.old_text}"` }
         }

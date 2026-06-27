@@ -4,6 +4,7 @@ import { MemoryStore } from "./store.js"
 import { loadConfig } from "./config.js"
 import { createMemoryTools } from "./tools.js"
 import { InjectionManager } from "./inject.js"
+import { configureEmbedding } from "./embed.js"
 
 export const id = "opencode-memory"
 
@@ -14,6 +15,7 @@ type PluginInput = {
 export const server = async (input: PluginInput) => {
   const configPath = join(homedir(), ".config", "opencode", "memory.jsonc")
   const config = loadConfig(configPath)
+  configureEmbedding(config.embedding.model)
 
   const xdg = process.env.XDG_DATA_HOME
   const base = xdg || join(homedir(), ".local", "share")

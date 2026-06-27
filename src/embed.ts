@@ -4,11 +4,25 @@ env.allowLocalModels = false
 
 type ExtractorFn = (text: string | string[], options: { pooling: string; normalize: boolean }) => Promise<{ data: Float32Array | number[]; dims?: number[] }>
 
+const DEFAULT_MODEL = "Xenova/all-MiniLM-L6-v2"
+
+let modelOverride: string | null = null
 let extractorPromise: Promise<ExtractorFn> | null = null
+let extractorModel: string | null = null
+
+export function configureEmbedding(model: string): void {
+  if (model && model !== modelOverride) {
+    modelOverride = model
+    extractorPromise = null
+    extractorModel = null
+  }
+}
 
 function getExtractor() {
-  if (!extractorPromise) {
-    extractorPromise = pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2") as unknown as Promise<ExtractorFn>
+  const model = modelOverride ?? DEFAULT_MODEL
+  if (!extractorPromise || extractorModel !== model) {
+    extractorPromise = pipeline("feature-extraction", model) as unknown as Promise<ExtractorFn>
+    extractorModel = model
   }
   return extractorPromise
 }

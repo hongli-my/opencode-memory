@@ -18,7 +18,7 @@ export class InjectionManager {
   private store: MemoryStore
   private config: Config
   private worktree: string
-  private l1SnapshotCache = new Map<string, string>()
+  private l1SnapshotCache = new Map<string, { snapshot: string; version: number }>()
   private turnCounts = new Map<string, number>()
   private embedCache = new Map<string, Float32Array>()
 
@@ -32,12 +32,14 @@ export class InjectionManager {
     const sessionID = input.sessionID ?? "_default"
     const scope = resolveScope(this.config, this.worktree)
 
-    if (!this.l1SnapshotCache.has(sessionID)) {
+    const coreVersion = this.store.getCoreVersion()
+    const cached = this.l1SnapshotCache.get(sessionID)
+    if (!cached || cached.version !== coreVersion) {
       const blocks = getL1Blocks(this.store, scope, this.config)
-      this.l1SnapshotCache.set(sessionID, formatL1ForSystemPrompt(blocks))
+      this.l1SnapshotCache.set(sessionID, { snapshot: formatL1ForSystemPrompt(blocks), version: coreVersion })
     }
 
-    const snapshot = this.l1SnapshotCache.get(sessionID)!
+    const snapshot = this.l1SnapshotCache.get(sessionID)!.snapshot
     if (snapshot) {
       output.system.push(snapshot)
     }
@@ -61,7 +63,10 @@ export class InjectionManager {
     const scope = resolveScope(this.config, this.worktree)
 
     let queryEmbedding = this.embedCache.get(userText)
-    if (!queryEmbedding) {
+    if (queryEmbedding) {
+      this.embedCache.delete(userText)
+      this.embedCache.set(userText, queryEmbedding)
+    } else {
       try {
         const { embed } = await import("./embed.js")
         queryEmbedding = await embed(userText)

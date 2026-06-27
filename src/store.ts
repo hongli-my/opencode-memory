@@ -53,6 +53,7 @@ function embeddingToBuffer(emb: Float32Array): Buffer {
 
 export class MemoryStore {
   private db: Database
+  private coreVersion = 0
 
   constructor(dataDir: string) {
     mkdirSync(dataDir, { recursive: true })
@@ -104,6 +105,11 @@ export class MemoryStore {
         input.expiresAt,
         input.metadata ? JSON.stringify(input.metadata) : null,
       )
+    if (input.core) this.coreVersion++
+  }
+
+  getCoreVersion(): number {
+    return this.coreVersion
   }
 
   list(scope: string, opts?: { type?: MemoryType; core?: boolean }): Memory[] {
@@ -178,11 +184,12 @@ export class MemoryStore {
     scope: string
     threshold: number
   }): Memory[] {
+    const now = Date.now()
     const rows = this.db
       .prepare(
-        `SELECT * FROM memories WHERE scope = ? AND superseded_by IS NULL AND embedding IS NOT NULL`,
+        `SELECT * FROM memories WHERE scope = ? AND core = 0 AND superseded_by IS NULL AND embedding IS NOT NULL AND (expires_at IS NULL OR expires_at > ?)`,
       )
-      .all(input.scope) as Row[]
+      .all(input.scope, now) as Row[]
     return rows
       .map((r) => {
         const mem = toMemory(r)
@@ -201,25 +208,29 @@ export class MemoryStore {
       .run(newId, ...oldIds, scope)
   }
 
-  replaceContent(scope: string, oldText: string, newText: string, type: MemoryType): number {
+  replaceContent(scope: string, oldText: string, newText: string, type: MemoryType, newEmbedding?: Float32Array): number {
     const result = this.db
       .prepare(
-        `UPDATE memories SET content = ? WHERE scope = ? AND content = ? AND type = ? AND superseded_by IS NULL`,
+        `UPDATE memories SET content = ?, embedding = ? WHERE scope = ? AND content = ? AND type = ? AND superseded_by IS NULL`,
       )
-      .run(newText, scope, oldText, type)
+      .run(newText, newEmbedding ? embeddingToBuffer(newEmbedding) : null, scope, oldText, type)
+    if (result.changes > 0) this.coreVersion++
     return result.changes
   }
 
   forget(scope: string, pattern: string): number {
-    const likePattern = `%${pattern}%`
+    const escaped = pattern.replace(/[%_]/g, (m) => "\\" + m)
+    const likePattern = `%${escaped}%`
     const result = this.db
-      .prepare(`DELETE FROM memories WHERE scope = ? AND content LIKE ?`)
+      .prepare(`DELETE FROM memories WHERE scope = ? AND content LIKE ? ESCAPE '\\'`)
       .run(scope, likePattern)
+    if (result.changes > 0) this.coreVersion++
     return result.changes
   }
 
   deleteById(scope: string, id: string): boolean {
     const result = this.db.prepare(`DELETE FROM memories WHERE id = ? AND scope = ?`).run(id, scope)
+    if (result.changes > 0) this.coreVersion++
     return result.changes > 0
   }
 
@@ -235,11 +246,11 @@ export class MemoryStore {
 }
 
 function cosineSimilarity(a: Float32Array, b: Float32Array): number {
-  const len = Math.min(a.length, b.length)
+  if (a.length !== b.length) return 0
   let dot = 0
   let normA = 0
   let normB = 0
-  for (let i = 0; i < len; i++) {
+  for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i]
     normA += a[i] * a[i]
     normB += b[i] * b[i]
